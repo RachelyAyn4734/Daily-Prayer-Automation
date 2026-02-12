@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./prayer_logic"
+    ]
+}
