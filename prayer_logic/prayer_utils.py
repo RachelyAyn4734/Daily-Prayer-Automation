@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Dict
 
-DATA_DIR = Path("data")
+DATA_DIR = Path.home() / "RunPrayers" / "data"
 
 
 def _file_path(prefix: str, target_list: str) -> Path:

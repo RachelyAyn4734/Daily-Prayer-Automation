@@ -80,6 +80,15 @@ def next_existing_index(start: int, prayers: PrayersDict, max_idx: int) -> int:
             idx = 1
     return 1
 
+def _get_prayer_entry(entry) -> Tuple[Optional[str], Optional[str]]:
+    """Extract name and request from prayer entry (handles both dict and list formats)."""
+    if isinstance(entry, dict):
+        return entry.get("name"), entry.get("request")
+    elif isinstance(entry, list) and len(entry) >= 2:
+        # List format: [name, request]
+        return entry[0], entry[1]
+    return None, None
+
 def process_next_prayer(
     current_index: int,
     prayers: PrayersDict,
@@ -90,10 +99,13 @@ def process_next_prayer(
 
     max_idx = max_index(prayers)
     idx = next_existing_index(current_index, prayers, max_idx)
-
+    print("idx:", idx)
     entry = prayers[str(idx)]
-    name = entry.get("name")
-    request = entry.get("request")
+    name, request = _get_prayer_entry(entry)
+    
+    if not name:
+        log.error("Invalid prayer entry at index %s", idx)
+        return None
 
     log.info("Processing prayer %s: %s", idx, name)
 
@@ -107,7 +119,7 @@ def process_next_prayer(
 # ----------------------------
 # Message builders
 # ----------------------------
-def build_plain_message(name: str, request: Optional[str], phone: Optional[str] = None) -> str:
+def build_plain_message(name: str, request: Optional[str]) -> str:
     prayer_text = request or "למציאת עבודה טובה בקלות ובמהירות"
     msg = f"""שלום לכולן,
 
@@ -117,26 +129,37 @@ def build_plain_message(name: str, request: Optional[str], phone: Optional[str] 
 
 🙏 בואו נעצור לרגע ונאמר פרק תהילים קצר.
 """
-    if phone:
-        msg += f"\n\n@{phone}"
     return msg
 
-def build_html_message(name: str, request: Optional[str], phone: Optional[str] = None) -> str:
+def build_html_message(name: str, request: Optional[str]) -> str:
     prayer_text = request or "למציאת עבודה טובה בקלות ובמהירות"
-    phone_tag = f"<br><br><strong>@{phone}</strong>" if phone else ""
-    return f"""
-    <html>
-    <body>
-      <div style="direction:rtl; text-align:right;">
-        שלום לכולן,<br><br>
-        היום מתפללים על <strong>{name}</strong> – <strong>{prayer_text}</strong>.<br>
-        ובנוסף – לרפואת הפצועים ולשמירה על החיילים.<br><br>
-        🙏 בואו נעצור לרגע ונאמר פרק תהילים קצר.<br>
-        {phone_tag}
-      </div>
-    </body>
-    </html>
+    psalm_text = """
+<div style="text-align:right;">
+<span style="direction:rtl; display:inline-block;">{א} מִזְמוֹר לְדָוִד יְהוָה רֹעִי לֹא אֶחְסָר.</span><br>
+<span style="direction:rtl; display:inline-block;">{ב} בִּנְאוֹת דֶּשֶׁא יַרְבִּיצֵנִי עַל-מֵי מְנֻחוֹת יְנַהֲלֵנִי.</span><br>
+<span style="direction:rtl; display:inline-block;">{ג} נַפְשִׁי יְשׁוֹבֵב יַנְחֵנִי בְמַעְגְּלֵי-צֶדֶק לְמַעַן שְׁמוֹ.</span><br>
+<span style="direction:rtl; display:inline-block;">{ד} גַּם כִּי-אֵלֵךְ בְּגֵיא צַלְמָוֶת לֹא-אִירָא רָע כִּי-אַתָּה עִמָּדִי שִׁבְטְךָ וּמִשְׁעַנְתֶּךָ הֵמָּה יְנַחֲמֻנִי.</span><br>
+<span style="direction:rtl; display:inline-block;">{ה} תַּעֲרֹךְ לְפָנַי שֻׁלְחָן נֶגֶד צֹרְרָי דִּשַּׁנְתָּ בַשֶּׁמֶן רֹאשִׁי כּוֹסִי רְוָיָה.</span><br>
+<span style="direction:rtl; display:inline-block;">{ו} אַךְ טוֹב וָחֶסֶד יִרְדְּפוּנִי כָּל-יְמֵי חַיָּי וְשַׁבְתִּי בְּבֵית-יְהוָה לְאֹרֶךְ יָמִים.</span><br>
+</div>
     """
+    return f"""<html>
+<body>
+<p style="text-align:right;direction:rtl;"> שלום לכולן,<br><br>
+    היום מתפללים על <strong>{name}</strong> – <strong>{prayer_text}</strong><br><br>
+    ובנוסף – לרפואת הפצועים, לשיבת החטופים ולשמירה על החיילים.<br><br>
+    🙏 בואו נעצור לרגע ונאמר פרק תהילים קצר.<br>
+    לנוחיותכן, מצרפת פרק תהילים שמסוגל לפרנסה טובה:<br><br>
+</p>
+<div style="font-size:14px; text-align:right; direction:rtl;">
+{psalm_text}
+</div>
+<p style="text-align:right;direction:rtl;">
+    אם תוכלנה לסמן ❤ על ההודעה כדי שאוכל לדעת שהשתתפתן.<br><br>
+    תזכו למצוות, מעריכות מאד!<br>
+</p>
+</body>
+</html>"""
 
 # ----------------------------
 # Email
@@ -156,19 +179,15 @@ def send_email(
         log.error("Missing SENDER_EMAIL / SENDER_PASSWORD")
         return
 
-    phone = None
-    phones = load_prayers_with_phone(target_list)
-    if prayer_id in phones:
-        phone = phones[prayer_id].get("phone")
-
     msg = MIMEMultipart("alternative")
     msg["From"] = sender
     msg["To"] = recipient
     msg["Subject"] = "Today's Prayer Request"
 
-    msg.attach(MIMEText(build_plain_message(name, request, phone), "plain"))
-    msg.attach(MIMEText(build_html_message(name, request, phone), "html"))
-
+    msg.attach(MIMEText(build_plain_message(name, request), "plain", _charset="utf-8"))
+    msg.attach(MIMEText(build_html_message(name, request), "html", _charset="utf-8"))
+    
+    print("msg:",msg.as_string())  # Debug: print email content
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(sender, password)
@@ -183,19 +202,25 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Send next prayer")
     parser.add_argument("--input", type=str, default=None, help="Index or name")
     parser.add_argument("--email", type=str, default="rachelyayn@gmail.com")
-    parser.add_argument("--state-file", type=str, default=str(Path.home() / "RunPrayers" / "last_index.txt"))
+    parser.add_argument("--state-file", type=str, default=str(Path.home() / "RunPrayers" / "data" / "last_index.txt"))
     parser.add_argument("--target-list", type=str, default="default")
     return parser.parse_args()
 
 def main() -> None:
     args = parse_args()
 
-    prayers = load_prayers(args.target_list)
+    try:
+        prayers = load_prayers(args.target_list)
+    except Exception as e:
+        log.error("Failed to load prayers: %s", e)
+        return
+    
     if not prayers:
         log.error("No prayers found.")
         return
 
     state_path = Path(args.state_file)
+    print("state_path:", state_path)
     start_idx = read_text_int(state_path, default=1)
 
     if args.input:
@@ -217,4 +242,7 @@ def main() -> None:
     send_email(name, request, args.email, prayer_id=str(start_idx), target_list=args.target_list)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        log.error("Unexpected error: %s", e, exc_info=True)
