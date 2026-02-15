@@ -1,4 +1,6 @@
-fastapi
-uvicorn
-pydantic
-python-dotenv
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+python-dotenv==1.0.1
+
