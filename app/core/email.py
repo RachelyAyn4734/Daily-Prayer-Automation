@@ -70,11 +70,12 @@ def _send_email_sync(
     """
     Synchronous email sending with retry logic.
     This runs in a thread pool to avoid blocking the event loop.
+    Uses port 465 with SSL for better cloud environment compatibility.
     """
     for attempt in range(max_retries):
         try:
-            with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
-                server.starttls()
+            # Use SMTP_SSL on port 465 for implicit SSL (better for cloud environments)
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60) as server:
                 server.login(sender_email, sender_password)
                 server.sendmail(sender_email, recipient, message.as_string())
             
