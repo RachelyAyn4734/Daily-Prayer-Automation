@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from .routers import prayers
 from .core.prayer_service import get_prayer_service
 from .core.supabase_client import cleanup_supabase
-from .core.email import email_executor
 from .settings import validate_config, DATA_MODE
 
 # Configure structured logging
@@ -60,9 +59,6 @@ async def lifespan(app: FastAPI):
     try:
         # Cleanup database connections
         await cleanup_supabase()
-        
-        # Shutdown email executor
-        email_executor.shutdown(wait=True)
         
         log.info("RunPrayers API shutdown complete")
     except Exception as e:
