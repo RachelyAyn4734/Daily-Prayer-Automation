@@ -1,4 +1,3 @@
-"""
 """Async email service for sending prayer requests using SendGrid.
 Consolidated and optimized from prayer_logic/prayers_file.py and other email logic.
 """
