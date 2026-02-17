@@ -1,20 +1,15 @@
 """
-Async email service for sending prayer requests.
+"""Async email service for sending prayer requests using SendGrid.
 Consolidated and optimized from prayer_logic/prayers_file.py and other email logic.
 """
 import asyncio
 import logging
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Optional, Dict, Any
-import concurrent.futures
-from ..settings import SENDER_EMAIL, SENDER_PASSWORD, DEFAULT_RECIPIENT
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Email, To, Content, HtmlContent
+from ..settings import SENDER_EMAIL, DEFAULT_RECIPIENT, SENDGRID_API_KEY
 
 log = logging.getLogger(__name__)
-
-# Thread pool executor for blocking SMTP operations
-email_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2, thread_name_prefix="email-sender")
 
 def build_plain_message(name: str, request: Optional[str]) -> str:
     """Build plain text prayer message."""
@@ -60,44 +55,59 @@ def build_html_message(name: str, request: Optional[str]) -> str:
 </body>
 </html>"""
 
-def _send_email_sync(
+async def _send_email_sendgrid(
     sender_email: str,
-    sender_password: str,
     recipient: str,
-    message: MIMEMultipart,
+    subject: str,
+    plain_content: str,
+    html_content: str,
     max_retries: int = 3
 ) -> Dict[str, Any]:
     """
-    Synchronous email sending with retry logic.
-    This runs in a thread pool to avoid blocking the event loop.
-    Uses port 465 with SSL for better cloud environment compatibility.
+    Send email using SendGrid API with retry logic.
+    SendGrid uses HTTPS API calls which work reliably on cloud platforms.
     """
+    if not SENDGRID_API_KEY:
+        log.error("SENDGRID_API_KEY not configured")
+        return {"success": False, "error": "SendGrid API key not configured", "attempt": 0}
+    
+    # Create SendGrid message
+    message = Mail(
+        from_email=Email(sender_email),
+        to_emails=To(recipient),
+        subject=subject,
+        plain_text_content=Content("text/plain", plain_content),
+        html_content=HtmlContent(html_content)
+    )
+    
     for attempt in range(max_retries):
         try:
-            # Use SMTP_SSL on port 465 for implicit SSL (better for cloud environments)
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=60) as server:
-                server.login(sender_email, sender_password)
-                server.sendmail(sender_email, recipient, message.as_string())
+            sg = SendGridAPIClient(SENDGRID_API_KEY)
+            response = sg.send(message)
             
-            return {"success": True, "attempt": attempt + 1}
-            
-        except smtplib.SMTPAuthenticationError as e:
-            log.error("SMTP Authentication failed: %s", e)
-            return {"success": False, "error": f"Authentication failed: {e}", "attempt": attempt + 1}
-            
-        except smtplib.SMTPRecipientsRefused as e:
-            log.error("SMTP Recipients refused: %s", e)
-            return {"success": False, "error": f"Recipients refused: {e}", "attempt": attempt + 1}
-            
-        except (smtplib.SMTPException, ConnectionError, TimeoutError) as e:
-            log.warning("SMTP attempt %d/%d failed: %s", attempt + 1, max_retries, e)
-            if attempt < max_retries - 1:
-                asyncio.sleep(2 ** attempt)  # Exponential backoff
-            continue
-            
+            if response.status_code in (200, 201, 202):
+                log.info("SendGrid email sent successfully (status: %d)", response.status_code)
+                return {"success": True, "attempt": attempt + 1, "status_code": response.status_code}
+            else:
+                log.warning("SendGrid returned status %d on attempt %d", response.status_code, attempt + 1)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                continue
+                
         except Exception as e:
-            log.error("Unexpected email error on attempt %d: %s", attempt + 1, e, exc_info=True)
-            return {"success": False, "error": f"Unexpected error: {e}", "attempt": attempt + 1}
+            error_msg = str(e)
+            log.warning("SendGrid attempt %d/%d failed: %s", attempt + 1, max_retries, error_msg)
+            
+            # Check for specific SendGrid errors
+            if hasattr(e, 'status_code'):
+                if e.status_code == 401:
+                    return {"success": False, "error": "Invalid SendGrid API key", "attempt": attempt + 1}
+                elif e.status_code == 403:
+                    return {"success": False, "error": "SendGrid API access forbidden", "attempt": attempt + 1}
+            
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+            continue
     
     return {"success": False, "error": f"Failed after {max_retries} attempts", "attempt": max_retries}
 
@@ -109,7 +119,7 @@ async def send_email(
     max_retries: int = 3
 ) -> bool:
     """
-    Async email sending with retry logic and proper error handling.
+    Async email sending via SendGrid with retry logic and proper error handling.
     
     Args:
         name: Prayer name
@@ -121,8 +131,12 @@ async def send_email(
     Returns:
         bool: True if email sent successfully, False otherwise
     """
-    if not SENDER_EMAIL or not SENDER_PASSWORD:
-        log.error("Missing email credentials: SENDER_EMAIL or SENDER_PASSWORD")
+    if not SENDGRID_API_KEY:
+        log.error("Missing SendGrid API key: SENDGRID_API_KEY")
+        return False
+    
+    if not SENDER_EMAIL:
+        log.error("Missing sender email: SENDER_EMAIL")
         return False
 
     recipient = recipient or DEFAULT_RECIPIENT
@@ -130,27 +144,19 @@ async def send_email(
         log.error("No recipient specified and DEFAULT_RECIPIENT not set")
         return False
 
-    # Prepare email message
-    msg = MIMEMultipart("alternative")
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = recipient
-    msg["Subject"] = "Today's Prayer Request"
-
-    # Attach both plain and HTML versions
-    msg.attach(MIMEText(build_plain_message(name, request), "plain", _charset="utf-8"))
-    msg.attach(MIMEText(build_html_message(name, request), "html", _charset="utf-8"))
+    # Build email content
+    plain_content = build_plain_message(name, request)
+    html_content = build_html_message(name, request)
+    subject = "Today's Prayer Request"
 
     try:
-        # Run blocking SMTP operation in thread pool
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            email_executor,
-            _send_email_sync,
-            SENDER_EMAIL,
-            SENDER_PASSWORD,
-            recipient,
-            msg,
-            max_retries
+        result = await _send_email_sendgrid(
+            sender_email=SENDER_EMAIL,
+            recipient=recipient,
+            subject=subject,
+            plain_content=plain_content,
+            html_content=html_content,
+            max_retries=max_retries
         )
         
         if result["success"]:
@@ -163,7 +169,7 @@ async def send_email(
             return False
         
     except Exception as e:
-        error_msg = f"Async email error for prayer {name} (ID: {prayer_id}): {e}"
+        error_msg = f"SendGrid email error for prayer {name} (ID: {prayer_id}): {e}"
         log.error(error_msg, exc_info=True)
         return False
 
@@ -207,13 +213,13 @@ async def send_email_batch(
     return result_map
 
 def validate_email_config() -> bool:
-    """Validate email configuration is properly set."""
+    """Validate email configuration is properly set for SendGrid."""
     missing = []
     
     if not SENDER_EMAIL:
         missing.append("SENDER_EMAIL")
-    if not SENDER_PASSWORD:
-        missing.append("SENDER_PASSWORD")
+    if not SENDGRID_API_KEY:
+        missing.append("SENDGRID_API_KEY")
     
     if missing:
         log.error(f"Missing email configuration: {', '.join(missing)}")
