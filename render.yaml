@@ -1,0 +1,50 @@
+# Render.com deployment configuration
+services:
+  # Main FastAPI Web Service
+  - type: web
+    name: runprayers-api
+    runtime: python3
+    buildCommand: pip install -r requirements.txt
+    startCommand: ./start.sh
+    plan: starter  # or 'standard' for production
+    region: oregon  # or your preferred region
+    branch: main
+    rootDir: .
+    
+    # Health check configuration
+    healthCheckPath: /api/health
+    
+    # Environment variables
+    envVars:
+      - key: DATA_MODE
+        value: database
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: PORT
+        value: 10000
+    
+    # Secrets (to be set in Render dashboard)
+    # These should NOT have values here - set them in Render UI:
+    # - SENDER_EMAIL
+    # - SENDER_PASSWORD  
+    # - SUPABASE_URL
+    # - SUPABASE_KEY
+    # - DEFAULT_RECIPIENT
+    # - API_KEY (optional)
+
+  # Cron job for daily prayer sending
+  - type: cron
+    name: runprayers-daily-cron
+    runtime: python3
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/daily_prayer_cron.py
+    schedule: "0 9 * * *"  # Daily at 9 AM UTC (adjust as needed)
+    branch: main
+    rootDir: .
+    
+    # Environment variables (same as web service)
+    envVars:
+      - key: DATA_MODE
+        value: database
+      - key: PYTHONPATH
+        value: /opt/render/project/src

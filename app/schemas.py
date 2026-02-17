@@ -7,4 +7,5 @@ class PrayerIn(BaseModel):
     phone: Optional[str] = None
     contact_name: Optional[str] = None
     tag_contact: bool = False
+    target_list: str = "default"  # Added for compatibility with original API
     

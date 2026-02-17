@@ -1,1 +1,0 @@
-# prayer_logic package

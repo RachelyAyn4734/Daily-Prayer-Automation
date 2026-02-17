@@ -1,1 +1,13 @@
 .env
+# Local data files
+*.json
+*.txt
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+# Local database / state
+*.db
+*.sqlite3

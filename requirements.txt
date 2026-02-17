@@ -1,6 +1,25 @@
+# Production FastAPI Dependencies
 fastapi==0.110.0
 uvicorn[standard]==0.29.0
+gunicorn==21.2.0
+
+# Database & Async Operations  
 sqlalchemy==2.0.25
 asyncpg==0.29.0
+aiohttp==3.8.6
+
+# Supabase Integration
+supabase==2.0.3
+httpx==0.24.1
+requests==2.31.0
+
+# Configuration & Environment
 python-dotenv==1.0.1
+
+# Security & Utilities
+urllib3==2.0.7
+
+# Testing (Development only - comment out for production)
+pytest==7.4.3
+pytest-asyncio==0.21.1
 
