@@ -2,10 +2,10 @@ name: Daily Prayer Sender
 
 on:
   schedule:
-    # Runs at 22:00 UTC = 00:00 midnight Israel Standard Time (UTC+2)
-    # Days: Sun–Thu in Israel = Sat–Wed in UTC (shift back 1 day at 22:00 UTC)
-    # UTC days: 6=Sat, 0=Sun, 1=Mon, 2=Tue, 3=Wed → covers Sun–Thu midnight in Israel
-    - cron: '0 22 * * 0,1,2,3,6'
+    # Runs at 10:00 UTC = 12:00 noon Israel Standard Time (UTC+2, winter)
+    # In summer (IDT, UTC+3) this will run at 13:00 Israel time instead of 12:00
+    # Days: Sun–Thu in Israel = Sun–Thu in UTC (no day boundary crossing at 10:00 UTC)
+    - cron: '0 11 * * 0,1,2,3,4'
   
   # Allow manual trigger from GitHub Actions UI for testing
   workflow_dispatch:
