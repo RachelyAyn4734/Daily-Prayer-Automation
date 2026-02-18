@@ -1,0 +1,57 @@
+name: Daily Prayer Sender
+
+on:
+  schedule:
+    # Runs at 22:00 UTC = 00:00 midnight Israel Standard Time (UTC+2)
+    # Days: Sun–Thu in Israel = Sat–Wed in UTC (shift back 1 day at 22:00 UTC)
+    # UTC days: 6=Sat, 0=Sun, 1=Mon, 2=Tue, 3=Wed → covers Sun–Thu midnight in Israel
+    - cron: '0 22 * * 0,1,2,3,6'
+  
+  # Allow manual trigger from GitHub Actions UI for testing
+  workflow_dispatch:
+
+jobs:
+  send-daily-prayer:
+    name: Send Daily Prayer
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wake up Render service (ping)
+        run: |
+          echo "Pinging Render service to wake it up..."
+          curl --silent --output /dev/null \
+               --connect-timeout 60 \
+               --retry 3 \
+               --retry-delay 10 \
+               --retry-connrefused \
+               https://run-prayers-apirun-prayers-api.onrender.com/health || true
+          echo "Waiting 20s for service to fully wake up..."
+          sleep 20
+
+      - name: Send daily prayer
+        run: |
+          echo "Sending daily prayer..."
+          RESPONSE=$(curl --silent \
+                          --show-error \
+                          --fail \
+                          --connect-timeout 60 \
+                          --max-time 120 \
+                          --retry 3 \
+                          --retry-delay 15 \
+                          --retry-connrefused \
+                          --write-out "\n%{http_code}" \
+                          --request POST \
+                          "https://run-prayers-apirun-prayers-api.onrender.com/api/send_prayer?target_list=default")
+          
+          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          echo "HTTP Status: $HTTP_STATUS"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "✅ Daily prayer sent successfully!"
+          else
+            echo "❌ Failed to send prayer. HTTP status: $HTTP_STATUS"
+            exit 1
+          fi
