@@ -1,13 +1,17 @@
 name: Daily Prayer Sender
 
 on:
-  schedule:
-    # Runs at 10:00 UTC = 12:00 noon Israel Standard Time (UTC+2, winter)
-    # In summer (IDT, UTC+3) this will run at 13:00 Israel time instead of 12:00
-    # Days: Sun–Thu in Israel = Sun–Thu in UTC (no day boundary crossing at 10:00 UTC)
-    - cron: '0 11 * * 0,1,2,3,4'
+  # יריץ את התהליך מיד ברגע שתעשי Push לקוד
+  push:
+    branches:
+      - main
   
-  # Allow manual trigger from GitHub Actions UI for testing
+  schedule:
+    # מוגדר ל-16:45 UTC (שהם 18:45 שעון ישראל)
+    # ימים: ראשון עד חמישי (0-4 ב-Cron)
+    - cron: '45 16 * * 0,1,2,3,4'
+  
+  # מאפשר הרצה ידנית מכפתור ה-Actions ב-GitHub
   workflow_dispatch:
 
 jobs:
