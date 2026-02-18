@@ -3,6 +3,7 @@ Consolidated and optimized from prayer_logic/prayers_file.py and other email log
 """
 import asyncio
 import logging
+from datetime import datetime
 from typing import Optional, Dict, Any
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content, HtmlContent
@@ -10,9 +11,10 @@ from ..settings import SENDER_EMAIL, DEFAULT_RECIPIENT, SENDGRID_API_KEY
 
 log = logging.getLogger(__name__)
 
-def build_plain_message(name: str, request: Optional[str]) -> str:
+def build_plain_message(name: str, request: Optional[str], sent_at: Optional[str] = None) -> str:
     """Build plain text prayer message."""
     prayer_text = request or "למציאת עבודה טובה בקלות ובמהירות"
+    timestamp = sent_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     msg = f"""שלום לכולן,
 
 היום מתפללים על *{name}* – *{prayer_text}*.
@@ -20,12 +22,16 @@ def build_plain_message(name: str, request: Optional[str]) -> str:
 ובנוסף – לרפואת הפצועים ולשמירה על החיילים.
 
 🙏 בואו נעצור לרגע ונאמר פרק תהילים קצר.
+
+---
+Sent at: {timestamp}
 """
     return msg
 
-def build_html_message(name: str, request: Optional[str]) -> str:
+def build_html_message(name: str, request: Optional[str], sent_at: Optional[str] = None) -> str:
     """Build HTML prayer message with Psalm 23."""
     prayer_text = request or "למציאת עבודה טובה בקלות ובמהירות"
+    timestamp = sent_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     psalm_text = """
 <div style="text-align:right;">
 <span style="direction:rtl; display:inline-block;">{א} מִזְמוֹר לְדָוִד יְהוָה רֹעִי לֹא אֶחְסָר.</span><br>
@@ -51,6 +57,9 @@ def build_html_message(name: str, request: Optional[str]) -> str:
     אם תוכלנה לסמן ❤ על ההודעה כדי שאוכל לדעת שהשתתפתן.<br><br>
     תזכו למצוות, מעריכות מאד!<br>
 </p>
+<p style="font-size:11px; color:#aaa; text-align:left; direction:ltr;">
+    Daily ID: {timestamp}
+</p>
 </body>
 </html>"""
 
@@ -70,9 +79,9 @@ async def _send_email_sendgrid(
         log.error("SENDGRID_API_KEY not configured")
         return {"success": False, "error": "SendGrid API key not configured", "attempt": 0}
     
-    # Create SendGrid message
+    # Create SendGrid message with display name for professionalism
     message = Mail(
-        from_email=Email(sender_email),
+        from_email=Email(sender_email, "SoulStream Daily"),
         to_emails=To(recipient),
         subject=subject,
         plain_text_content=Content("text/plain", plain_content),
@@ -85,7 +94,7 @@ async def _send_email_sendgrid(
             response = sg.send(message)
             
             if response.status_code in (200, 201, 202):
-                log.info("SendGrid email sent successfully (status: %d)", response.status_code)
+                log.info("[SendGrid] ✅ Email accepted (HTTP %d) on attempt %d", response.status_code, attempt + 1)
                 return {"success": True, "attempt": attempt + 1, "status_code": response.status_code}
             else:
                 log.warning("SendGrid returned status %d on attempt %d", response.status_code, attempt + 1)
@@ -143,10 +152,18 @@ async def send_email(
         log.error("No recipient specified and DEFAULT_RECIPIENT not set")
         return False
 
-    # Build email content
-    plain_content = build_plain_message(name, request)
-    html_content = build_html_message(name, request)
-    subject = "Today's Prayer Request"
+    # Build dynamic subject and timestamp to avoid spam filters
+    now = datetime.now()
+    sent_at = now.strftime("%Y-%m-%d %H:%M:%S")
+    day_name = now.strftime("%A")  # e.g. Wednesday
+    date_str = now.strftime("%b %d, %Y")  # e.g. Feb 18, 2026
+    subject = f"Daily Prayer - {day_name}, {date_str}"
+
+    # Build email content with timestamp
+    plain_content = build_plain_message(name, request, sent_at)
+    html_content = build_html_message(name, request, sent_at)
+
+    log.info("[SendGrid] Preparing email | Subject: '%s' | To: %s | Prayer: %s", subject, recipient, name)
 
     try:
         result = await _send_email_sendgrid(
