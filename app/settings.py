@@ -15,12 +15,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     log.warning("DATABASE_URL not set, falling back to local mode")
 
-# Email Configuration (SendGrid)
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+# Email Configuration (Gmail SMTP)
+EMAIL_USER = os.getenv("EMAIL_USER")          # Gmail address used to authenticate
+EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")  # Gmail App Password (not account password)
 DEFAULT_RECIPIENT = os.getenv("DEFAULT_RECIPIENT", "recipient@example.com")
-# Legacy Gmail config (deprecated - kept for reference)
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")  # No longer used with SendGrid
 
 # Supabase Configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -51,10 +49,10 @@ def validate_config() -> bool:
         if not SUPABASE_KEY:
             missing.append("SUPABASE_KEY")
     
-    if not SENDER_EMAIL:
-        missing.append("SENDER_EMAIL")
-    if not SENDGRID_API_KEY:
-        missing.append("SENDGRID_API_KEY")
+    if not EMAIL_USER:
+        missing.append("EMAIL_USER")
+    if not EMAIL_APP_PASSWORD:
+        missing.append("EMAIL_APP_PASSWORD")
     
     if missing:
         log.error(f"Missing required environment variables: {', '.join(missing)}")
