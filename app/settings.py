@@ -16,8 +16,9 @@ if not DATABASE_URL:
     log.warning("DATABASE_URL not set, falling back to local mode")
 
 # Email Configuration (Gmail SMTP)
-EMAIL_USER = os.getenv("EMAIL_USER")          # Gmail address used to authenticate
-EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")  # Gmail App Password (not account password)
+# Supports both new names (EMAIL_USER / EMAIL_APP_PASSWORD) and legacy Render names (SENDER_EMAIL / SENDER_PASSWORD)
+EMAIL_USER = os.getenv("EMAIL_USER") or os.getenv("SENDER_EMAIL")
+EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SENDER_PASSWORD")
 DEFAULT_RECIPIENT = os.getenv("DEFAULT_RECIPIENT", "recipient@example.com")
 
 # Supabase Configuration
