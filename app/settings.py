@@ -15,8 +15,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     log.warning("DATABASE_URL not set, falling back to local mode")
 
-# Email Configuration (Gmail SMTP)
-# Supports both new names (EMAIL_USER / EMAIL_APP_PASSWORD) and legacy Render names (SENDER_EMAIL / SENDER_PASSWORD)
+# Email Configuration (Resend HTTP API)
+# Supports legacy Render names (SENDER_EMAIL / SENDER_PASSWORD) for reference
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_USER = os.getenv("EMAIL_USER") or os.getenv("SENDER_EMAIL")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD") or os.getenv("SENDER_PASSWORD")
 DEFAULT_RECIPIENT = os.getenv("DEFAULT_RECIPIENT", "recipient@example.com")
@@ -50,10 +51,8 @@ def validate_config() -> bool:
         if not SUPABASE_KEY:
             missing.append("SUPABASE_KEY")
     
-    if not EMAIL_USER:
-        missing.append("EMAIL_USER")
-    if not EMAIL_APP_PASSWORD:
-        missing.append("EMAIL_APP_PASSWORD")
+    if not RESEND_API_KEY:
+        missing.append("RESEND_API_KEY")
     
     if missing:
         log.error(f"Missing required environment variables: {', '.join(missing)}")

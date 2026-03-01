@@ -3,8 +3,8 @@ fastapi==0.110.0
 uvicorn[standard]==0.29.0
 gunicorn==21.2.0
 
-# Email Service (Gmail SMTP via built-in smtplib)
-# smtplib and email.mime are part of the Python standard library
+# Email Service (Resend - HTTP API, works on Render free tier)
+resend==2.4.0
 
 # Database & Async Operations  
 sqlalchemy==2.0.25
