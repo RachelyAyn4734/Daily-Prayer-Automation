@@ -12,46 +12,28 @@ on:
 
 jobs:
   send-daily-prayer:
-    name: Send Daily Prayer
+    name: Send daily prayer
     runs-on: ubuntu-latest
 
     steps:
-      - name: Wake up Render service (ping)
-        run: |
-          echo "Pinging Render service to wake it up..."
-          curl --silent --output /dev/null \
-               --connect-timeout 60 \
-               --retry 3 \
-               --retry-delay 10 \
-               --retry-connrefused \
-               https://run-prayers-apirun-prayers-api.onrender.com/health || true
-          echo "Waiting 20s for service to fully wake up..."
-          sleep 20
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Send daily prayer
-        run: |
-          echo "Sending daily prayer..."
-          RESPONSE=$(curl --silent \
-                          --show-error \
-                          --fail \
-                          --connect-timeout 60 \
-                          --max-time 120 \
-                          --retry 3 \
-                          --retry-delay 15 \
-                          --retry-connrefused \
-                          --write-out "\n%{http_code}" \
-                          --request POST \
-                          "https://run-prayers-apirun-prayers-api.onrender.com/api/send_prayer?target_list=default")
-          
-          HTTP_STATUS=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
-          
-          echo "HTTP Status: $HTTP_STATUS"
-          echo "Response: $BODY"
-          
-          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
-            echo "✅ Daily prayer sent successfully!"
-          else
-            echo "❌ Failed to send prayer. HTTP status: $HTTP_STATUS"
-            exit 1
-          fi
+        env:
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
+          DEFAULT_RECIPIENT: ${{ secrets.DEFAULT_RECIPIENT }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DATA_MODE: database
+        run: python scripts/daily_prayer_cron.py

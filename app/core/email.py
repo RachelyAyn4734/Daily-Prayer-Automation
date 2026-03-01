@@ -1,18 +1,23 @@
-"""Async email service for sending prayer requests using Resend HTTP API.
-Migrated from Gmail SMTP (blocked by Render) to Resend HTTPS API.
+"""Async email service for sending prayer requests using Gmail SMTP (smtplib).
+GitHub Actions does not block SMTP ports — works perfectly with Gmail on port 465.
 """
 import asyncio
 import logging
-import resend
+import smtplib
+import ssl
+import time
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.utils import formataddr
 from typing import Optional, Dict, Any
 
-from ..settings import DEFAULT_RECIPIENT, RESEND_API_KEY
+from ..settings import DEFAULT_RECIPIENT, EMAIL_USER, EMAIL_APP_PASSWORD
 
-# Fixed sender identity — must be a verified sender in Resend console
+# Fixed sender identity
 SENDER_EMAIL = "rachelyayn4734@gmail.com"
 SENDER_NAME = "RunPrayer"
-FROM_ADDRESS = f"{SENDER_NAME} <{SENDER_EMAIL}>"
+FROM_ADDRESS = formataddr((SENDER_NAME, SENDER_EMAIL))
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +76,7 @@ def build_html_message(name: str, request: Optional[str], sent_at: Optional[str]
 </body>
 </html>"""
 
-def _send_email_resend(
+def _send_email_smtp(
     recipient: str,
     subject: str,
     plain_content: str,
@@ -79,33 +84,39 @@ def _send_email_resend(
     max_retries: int = 3
 ) -> Dict[str, Any]:
     """
-    Send email via Resend HTTPS API.
-    Works on Render free tier (no blocked ports).
+    Send email via Gmail SMTP SSL on port 465.
+    Works on GitHub Actions (SMTP ports are not blocked).
     """
-    if not RESEND_API_KEY:
-        log.error("RESEND_API_KEY not configured")
-        return {"success": False, "error": "RESEND_API_KEY not configured", "attempt": 0}
+    if not EMAIL_USER:
+        log.error("EMAIL_USER not configured")
+        return {"success": False, "error": "EMAIL_USER not configured", "attempt": 0}
+    if not EMAIL_APP_PASSWORD:
+        log.error("EMAIL_APP_PASSWORD not configured")
+        return {"success": False, "error": "EMAIL_APP_PASSWORD not configured", "attempt": 0}
 
-    resend.api_key = RESEND_API_KEY
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = FROM_ADDRESS
+    msg["To"] = recipient
+    msg.attach(MIMEText(plain_content, "plain", "utf-8"))
+    msg.attach(MIMEText(html_content, "html", "utf-8"))
 
     last_error: Optional[str] = None
     for attempt in range(1, max_retries + 1):
         try:
-            params: resend.Emails.SendParams = {
-                "from": FROM_ADDRESS,
-                "to": [recipient],
-                "subject": subject,
-                "html": html_content,
-                "text": plain_content,
-            }
-            response = resend.Emails.send(params)
-            log.info("[Resend] ✅ Email sent to %s on attempt %d (id: %s)", recipient, attempt, response.get("id"))
+            context = ssl.create_default_context()
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+                server.login(EMAIL_USER, EMAIL_APP_PASSWORD)
+                server.sendmail(SENDER_EMAIL, recipient, msg.as_string())
+            log.info("[Gmail SMTP] ✅ Email sent to %s on attempt %d", recipient, attempt)
             return {"success": True, "attempt": attempt}
+        except smtplib.SMTPAuthenticationError as e:
+            log.error("[Gmail SMTP] Authentication failed: %s", e)
+            return {"success": False, "error": f"Authentication failed: {e}", "attempt": attempt}
         except Exception as e:
             last_error = str(e)
-            log.warning("[Resend] Attempt %d/%d failed: %s", attempt, max_retries, last_error)
+            log.warning("[Gmail SMTP] Attempt %d/%d failed: %s", attempt, max_retries, last_error)
             if attempt < max_retries:
-                import time
                 time.sleep(2 ** (attempt - 1))
 
     return {"success": False, "error": f"Failed after {max_retries} attempts: {last_error}", "attempt": max_retries}
@@ -119,20 +130,11 @@ async def send_email(
     max_retries: int = 3
 ) -> bool:
     """
-    Async email sending via Resend HTTPS API with retry logic.
-
-    Args:
-        name: Prayer name
-        request: Prayer request text
-        recipient: Email recipient (defaults to DEFAULT_RECIPIENT)
-        prayer_id: Database prayer ID for logging
-        max_retries: Number of retry attempts
-
-    Returns:
-        bool: True if email sent successfully, False otherwise
+    Async email sending via Gmail SMTP with retry logic.
+    Runs the blocking SMTP call in a thread so the event loop stays free.
     """
-    if not RESEND_API_KEY:
-        log.error("Missing RESEND_API_KEY")
+    if not EMAIL_USER or not EMAIL_APP_PASSWORD:
+        log.error("Missing Gmail credentials: EMAIL_USER and/or EMAIL_APP_PASSWORD")
         return False
 
     recipient = recipient or DEFAULT_RECIPIENT
@@ -149,29 +151,23 @@ async def send_email(
     plain_content = build_plain_message(name, request, sent_at)
     html_content = build_html_message(name, request, sent_at)
 
-    log.info("[Resend] Preparing email | Subject: '%s' | To: %s | Prayer: %s", subject, recipient, name)
+    log.info("[Gmail SMTP] Preparing email | Subject: '%s' | To: %s | Prayer: %s", subject, recipient, name)
 
     try:
         result = await asyncio.to_thread(
-            _send_email_resend,
-            recipient,
-            subject,
-            plain_content,
-            html_content,
-            max_retries,
+            _send_email_smtp,
+            recipient, subject, plain_content, html_content, max_retries,
         )
-
         if result["success"]:
-            log.info("Email sent successfully to %s for prayer: %s (ID: %s) on attempt %d",
+            log.info("Email sent to %s for prayer: %s (ID: %s) on attempt %d",
                      recipient, name, prayer_id or "N/A", result["attempt"])
             return True
         else:
             log.error("Email failed to %s for prayer: %s (ID: %s) - %s",
                       recipient, name, prayer_id or "N/A", result["error"])
             return False
-
     except Exception as e:
-        log.error("Resend email error for prayer %s (ID: %s): %s", name, prayer_id, e, exc_info=True)
+        log.error("Gmail SMTP error for prayer %s (ID: %s): %s", name, prayer_id, e, exc_info=True)
         return False
 
 
@@ -204,9 +200,14 @@ async def send_email_batch(
 
 
 def validate_email_config() -> bool:
-    """Validate email configuration is properly set for Resend."""
-    if not RESEND_API_KEY:
-        log.error("Missing email configuration: RESEND_API_KEY")
+    """Validate Gmail SMTP configuration."""
+    missing = []
+    if not EMAIL_USER:
+        missing.append("EMAIL_USER")
+    if not EMAIL_APP_PASSWORD:
+        missing.append("EMAIL_APP_PASSWORD")
+    if missing:
+        log.error(f"Missing email configuration: {', '.join(missing)}")
         return False
     return True
 
@@ -224,7 +225,7 @@ if __name__ == "__main__":
     )
 
     async def _test():
-        log.info("=== TEST: Sending a prayer email via Resend ===")
+        log.info("=== TEST: Sending a prayer email via Gmail SMTP ===")
         success = await send_email(
             name="Test Person",
             request="למציאת עבודה טובה בקלות ובמהירות",
@@ -233,7 +234,7 @@ if __name__ == "__main__":
         if success:
             log.info("✅ Test email sent successfully!")
         else:
-            log.error("❌ Test email failed – check RESEND_API_KEY and sender verification.")
+            log.error("❌ Test email failed – check EMAIL_USER and EMAIL_APP_PASSWORD.")
         return success
 
     result = asyncio.run(_test())
